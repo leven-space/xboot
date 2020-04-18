@@ -1,6 +1,7 @@
 package cn.exrick.xboot.base.controller.manage;
 
 import cn.exrick.xboot.core.common.constant.CommonConstant;
+import cn.exrick.xboot.core.common.redis.RedisTemplateHelper;
 import cn.exrick.xboot.core.common.utils.PageUtil;
 import cn.exrick.xboot.core.common.utils.ResultUtil;
 import cn.exrick.xboot.core.common.utils.SecurityUtil;
@@ -66,6 +67,9 @@ public class UserController {
     private StringRedisTemplate redisTemplate;
 
     @Autowired
+    private RedisTemplateHelper redisTemplateHelper;
+
+    @Autowired
     private SecurityUtil securityUtil;
 
     @PersistenceContext
@@ -73,7 +77,7 @@ public class UserController {
 
     @RequestMapping(value = "/regist",method = RequestMethod.POST)
     @ApiOperation(value = "注册用户")
-    public Result<Object> regist(@ModelAttribute User u){
+    public Result<Object> regist(User u){
 
         if(StrUtil.isBlank(u.getUsername()) || StrUtil.isBlank(u.getPassword())){
             return ResultUtil.error("缺少必需表单字段");
@@ -142,7 +146,7 @@ public class UserController {
     @RequestMapping(value = "/edit",method = RequestMethod.POST)
     @ApiOperation(value = "修改用户自己资料",notes = "用户名密码不会修改 需要username更新缓存")
     @CacheEvict(key = "#u.username")
-    public Result<Object> editOwn(@ModelAttribute User u){
+    public Result<Object> editOwn(User u){
 
         User old = securityUtil.getCurrUser();
         u.setUsername(old.getUsername());
@@ -162,7 +166,7 @@ public class UserController {
     @RequestMapping(value = "/admin/edit",method = RequestMethod.POST)
     @ApiOperation(value = "管理员修改资料",notes = "需要通过id获取原用户信息 需要username更新缓存")
     @CacheEvict(key = "#u.username")
-    public Result<Object> edit(@ModelAttribute User u,
+    public Result<Object> edit(User u,
                                @RequestParam(required = false) String[] roles){
 
         User old = userService.get(u.getId());
@@ -237,9 +241,9 @@ public class UserController {
 
     @RequestMapping(value = "/getByCondition",method = RequestMethod.GET)
     @ApiOperation(value = "多条件分页获取用户列表")
-    public Result<Page<User>> getByCondition(@ModelAttribute User user,
-                                             @ModelAttribute SearchVo searchVo,
-                                             @ModelAttribute PageVo pageVo){
+    public Result<Page<User>> getByCondition(User user,
+                                             SearchVo searchVo,
+                                             PageVo pageVo){
 
         Page<User> page = userService.findByCondition(user, searchVo, PageUtil.initPage(pageVo));
         for(User u: page.getContent()){
@@ -295,7 +299,7 @@ public class UserController {
 
     @RequestMapping(value = "/admin/add",method = RequestMethod.POST)
     @ApiOperation(value = "添加用户")
-    public Result<Object> regist(@ModelAttribute User u,
+    public Result<Object> regist(User u,
                                  @RequestParam(required = false) String[] roles){
 
         if(StrUtil.isBlank(u.getUsername()) || StrUtil.isBlank(u.getPassword())){
@@ -366,7 +370,7 @@ public class UserController {
             redisTemplate.delete("userRole::" + u.getId());
             redisTemplate.delete("userRole::depIds:" + u.getId());
             redisTemplate.delete("permission::userMenuList:" + u.getId());
-            Set<String> keys = redisTemplate.keys("department::*");
+            Set<String> keys = redisTemplateHelper.keys("department::*");
             redisTemplate.delete(keys);
             userService.delete(id);
             //删除关联角色

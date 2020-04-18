@@ -29,7 +29,7 @@ import org.springframework.web.bind.annotation.*;
 @Transactional
 public class LogController{
 
-    @Value("${xboot.logRecord.es}")
+    @Value("${xboot.logRecord.es:false}")
     private Boolean esRecord;
 
     @Autowired
@@ -42,8 +42,8 @@ public class LogController{
     @ApiOperation(value = "分页获取全部")
     public Result<Object> getAllByPage(@RequestParam(required = false) Integer type,
                                        @RequestParam String key,
-                                       @ModelAttribute SearchVo searchVo,
-                                       @ModelAttribute PageVo pageVo){
+                                       SearchVo searchVo,
+                                       PageVo pageVo){
 
         if(esRecord){
             Page<EsLog> es = esLogService.findByConfition(type, key, searchVo, PageUtil.initPage(pageVo));
