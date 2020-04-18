@@ -1,5 +1,6 @@
 package cn.exrick.xboot;
 
+import com.alibaba.nacos.spring.context.annotation.config.NacosPropertySource;
 import de.codecentric.boot.admin.server.config.EnableAdminServer;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -22,6 +23,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 @EnableScheduling
 // 启用Admin监控
 @EnableAdminServer
+@NacosPropertySource(dataId = "xboot-application-dev.properties", autoRefreshed = true)
 public class XbootApplication {
 
     public static void main(String[] args) {

@@ -12,13 +12,18 @@ server:
     max-threads: 1000
     min-spare-threads: 30
 
+nacos:
+  config:
+    endpoint: acm.aliyun.com
+    namespace: 9216e76d-df86-4390-af31-12a2f599c345
+
 spring:
   # 数据源
   datasource:
-    url: jdbc:mysql://127.0.0.1:3306/xboot?useUnicode=true&characterEncoding=utf-8&useSSL=false
+    url: jdbc:mysql://wetech.club:3306/xboot?useUnicode=true&characterEncoding=utf-8&useSSL=false
     username: root
     # Jasypt加密 可到common-utils中找到JasyptUtil加解密工具类生成加密结果 格式为ENC(加密结果) 以下解密结果为123456
-    password: ENC(uOtmALFgsfxgYzEg1uLXl3O/tg6X1Dy25I3SdAeqqETOyZbDwmaW0/EZEusIh6hK)
+    password: ${datasource.password}
     type: com.alibaba.druid.pool.DruidDataSource
     driverClassName: com.mysql.cj.jdbc.Driver
     # Druid StatViewServlet配置
@@ -30,7 +35,7 @@ spring:
         # 允许清空统计数据
         reset-enable: true
         login-username: root
-        login-password: ENC(uOtmALFgsfxgYzEg1uLXl3O/tg6X1Dy25I3SdAeqqETOyZbDwmaW0/EZEusIh6hK)
+        login-password: ${druid.login.passwrod}
         # IP白名单 多个逗号分隔
         allow:
         # IP黑名单
@@ -56,8 +61,8 @@ spring:
       ddl-auto: update
   # Redis
   redis:
-    host: 127.0.0.1
-    password:
+    host: wetech.club
+    password: ${redis.password}
     # 数据库索引 默认0
     database: 0
     port: 6379
@@ -232,3 +237,4 @@ logging:
     max-history: 7
     # 每个文件最大大小
     max-size: 5MB
+
