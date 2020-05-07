@@ -1,12 +1,12 @@
 package cn.exrick.xboot.base.controller.manage;
 
 import cn.exrick.xboot.core.common.constant.CommonConstant;
+import cn.exrick.xboot.core.common.exception.XbootException;
 import cn.exrick.xboot.core.common.redis.RedisTemplateHelper;
-import cn.exrick.xboot.core.common.utils.PageUtil;
-import cn.exrick.xboot.core.common.utils.ResultUtil;
-import cn.exrick.xboot.core.common.utils.SecurityUtil;
+import cn.exrick.xboot.core.common.utils.*;
 import cn.exrick.xboot.core.common.vo.PageVo;
 import cn.exrick.xboot.core.common.vo.Result;
+import cn.exrick.xboot.core.common.vo.RoleDTO;
 import cn.exrick.xboot.core.common.vo.SearchVo;
 import cn.exrick.xboot.core.entity.Department;
 import cn.exrick.xboot.core.entity.Role;
@@ -30,8 +30,11 @@ import org.springframework.web.bind.annotation.*;
 
 import javax.persistence.EntityManager;
 import javax.persistence.PersistenceContext;
+import javax.validation.Valid;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 
 /**
@@ -77,30 +80,20 @@ public class UserController {
 
     @RequestMapping(value = "/regist",method = RequestMethod.POST)
     @ApiOperation(value = "注册用户")
-    public Result<Object> regist(User u){
+    public Result<Object> regist(@Valid User u){
 
-        if(StrUtil.isBlank(u.getUsername()) || StrUtil.isBlank(u.getPassword())){
-            return ResultUtil.error("缺少必需表单字段");
-        }
-
-        if(userService.findByUsername(u.getUsername())!=null){
-            return ResultUtil.error("该用户名已被注册");
-        }
+        // 校验是否已存在
+        checkUserInfo(u.getUsername(), u.getMobile(), u.getEmail());
 
         String encryptPass = new BCryptPasswordEncoder().encode(u.getPassword());
-        u.setPassword(encryptPass);
-        u.setType(CommonConstant.USER_TYPE_NORMAL);
-        User user=userService.save(u);
-        if(user==null){
-            return ResultUtil.error("注册失败");
-        }
+        u.setPassword(encryptPass).setType(CommonConstant.USER_TYPE_NORMAL);
+        User user = userService.save(u);
+
         // 默认角色
         List<Role> roleList = roleService.findByDefaultRole(true);
         if(roleList!=null&&roleList.size()>0){
             for(Role role : roleList){
-                UserRole ur = new UserRole();
-                ur.setUserId(user.getId());
-                ur.setRoleId(role.getId());
+                UserRole ur = new UserRole().setUserId(user.getId()).setRoleId(role.getId());
                 userRoleService.save(ur);
             }
         }
@@ -159,60 +152,6 @@ public class UserController {
     }
 
     /**
-     * @param u
-     * @param roles
-     * @return
-     */
-    @RequestMapping(value = "/admin/edit",method = RequestMethod.POST)
-    @ApiOperation(value = "管理员修改资料",notes = "需要通过id获取原用户信息 需要username更新缓存")
-    @CacheEvict(key = "#u.username")
-    public Result<Object> edit(User u,
-                               @RequestParam(required = false) String[] roles){
-
-        User old = userService.get(u.getId());
-        //若修改了用户名
-        if(!old.getUsername().equals(u.getUsername())){
-            //若修改用户名删除原用户名缓存
-            redisTemplate.delete("user::"+old.getUsername());
-            //判断新用户名是否存在
-            if(userService.findByUsername(u.getUsername())!=null){
-                return ResultUtil.error("该用户名已被存在");
-            }
-        }
-
-        // 若修改了手机和邮箱判断是否唯一
-        if(!old.getMobile().equals(u.getMobile())&&userService.findByMobile(u.getMobile())!=null){
-            return ResultUtil.error("该手机号已绑定其他账户");
-        }
-        if(!old.getEmail().equals(u.getEmail())&&userService.findByMobile(u.getEmail())!=null){
-            return ResultUtil.error("该邮箱已绑定其他账户");
-        }
-
-        u.setPassword(old.getPassword());
-        User user=userService.update(u);
-        if(user==null){
-            return ResultUtil.error("修改失败");
-        }
-        //删除该用户角色
-        userRoleService.deleteByUserId(u.getId());
-        if(roles!=null&&roles.length>0){
-            //新角色
-            for(String roleId : roles){
-                UserRole ur = new UserRole();
-                ur.setRoleId(roleId);
-                ur.setUserId(u.getId());
-                userRoleService.save(ur);
-            }
-        }
-        //手动删除缓存
-        redisTemplate.delete("userRole::"+u.getId());
-        redisTemplate.delete("userRole::depIds:"+u.getId());
-        redisTemplate.delete("userPermission::"+u.getId());
-        redisTemplate.delete("permission::userMenuList:"+u.getId());
-        return ResultUtil.success("修改成功");
-    }
-
-    /**
      * 线上demo不允许测试账号改密码
      * @param password
      * @param newPass
@@ -233,7 +172,7 @@ public class UserController {
         user.setPassword(newEncryptPass);
         userService.update(user);
 
-        //手动更新缓存
+        // 手动更新缓存
         redisTemplate.delete("user::"+user.getUsername());
 
         return ResultUtil.success("修改密码成功");
@@ -247,18 +186,13 @@ public class UserController {
 
         Page<User> page = userService.findByCondition(user, searchVo, PageUtil.initPage(pageVo));
         for(User u: page.getContent()){
-            // 关联部门
-            if(StrUtil.isNotBlank(u.getDepartmentId())){
-                Department department = departmentService.get(u.getDepartmentId());
-                if(department!=null){
-                    u.setDepartmentTitle(department.getTitle());
-                }
-            }
-            // 关联角色
             List<Role> list = iUserRoleService.findByUserId(u.getId());
-            u.setRoles(list);
-            // 清除持久上下文环境 避免后面语句导致持久化
-            entityManager.clear();
+            List<RoleDTO> roleDTOList = list.stream().map(e->{
+                return new RoleDTO().setId(e.getId()).setName(e.getName()).setDescription(e.getDescription());
+            }).collect(Collectors.toList());
+            u.setRoles(roleDTOList);
+            // 游离态 避免后面语句导致持久化
+            entityManager.detach(u);
             u.setPassword(null);
         }
         return new ResultUtil<Page<User>>().setData(page);
@@ -283,13 +217,6 @@ public class UserController {
 
         List<User> list = userService.getAll();
         for(User u: list){
-            // 关联部门
-            if(StrUtil.isNotBlank(u.getDepartmentId())){
-                Department department = departmentService.get(u.getDepartmentId());
-                if(department!=null){
-                    u.setDepartmentTitle(department.getTitle());
-                }
-            }
             // 清除持久上下文环境 避免后面语句导致持久化
             entityManager.clear();
             u.setPassword(null);
@@ -299,34 +226,80 @@ public class UserController {
 
     @RequestMapping(value = "/admin/add",method = RequestMethod.POST)
     @ApiOperation(value = "添加用户")
-    public Result<Object> regist(User u,
-                                 @RequestParam(required = false) String[] roles){
+    public Result<Object> add(@Valid User u,
+                              @RequestParam(required = false) String[] roles){
 
-        if(StrUtil.isBlank(u.getUsername()) || StrUtil.isBlank(u.getPassword())){
-            return ResultUtil.error("缺少必需表单字段");
-        }
-
-        if(userService.findByUsername(u.getUsername())!=null){
-            return ResultUtil.error("该用户名已被注册");
-        }
+        // 校验是否已存在
+        checkUserInfo(u.getUsername(), u.getMobile(), u.getEmail());
 
         String encryptPass = new BCryptPasswordEncoder().encode(u.getPassword());
         u.setPassword(encryptPass);
-        User user=userService.save(u);
-        if(user==null){
-            return ResultUtil.error("添加失败");
-        }
-        if(roles!=null&&roles.length>0){
-            //添加角色
-            for(String roleId : roles){
-                UserRole ur = new UserRole();
-                ur.setUserId(u.getId());
-                ur.setRoleId(roleId);
-                userRoleService.save(ur);
+        if(StrUtil.isNotBlank(u.getDepartmentId())){
+            Department d = departmentService.get(u.getDepartmentId());
+            if(d!=null){
+                u.setDepartmentTitle(d.getTitle());
             }
+        }else{
+            u.setDepartmentId(null);
+            u.setDepartmentTitle("");
+        }
+        User user = userService.save(u);
+
+        if(roles!=null){
+            // 添加角色
+            List<UserRole> userRoles = Arrays.asList(roles).stream().map(e -> {
+                return new UserRole().setUserId(u.getId()).setRoleId(e);
+            }).collect(Collectors.toList());
+            userRoleService.saveOrUpdateAll(userRoles);
         }
 
-        return ResultUtil.data(user);
+        return ResultUtil.success("添加成功");
+    }
+
+    @RequestMapping(value = "/admin/edit",method = RequestMethod.POST)
+    @ApiOperation(value = "管理员修改资料",notes = "需要通过id获取原用户信息 需要username更新缓存")
+    @CacheEvict(key = "#u.username")
+    public Result<Object> edit(User u,
+                               @RequestParam(required = false) String[] roles){
+
+        User old = userService.get(u.getId());
+
+        u.setUsername(old.getUsername());
+        // 若修改了手机和邮箱判断是否唯一
+        if(!old.getMobile().equals(u.getMobile())&&userService.findByMobile(u.getMobile())!=null){
+            return ResultUtil.error("该手机号已绑定其他账户");
+        }
+        if(!old.getEmail().equals(u.getEmail())&&userService.findByEmail(u.getEmail())!=null){
+            return ResultUtil.error("该邮箱已绑定其他账户");
+        }
+
+        if(StrUtil.isNotBlank(u.getDepartmentId())){
+            Department d = departmentService.get(u.getDepartmentId());
+            if(d!=null){
+                u.setDepartmentTitle(d.getTitle());
+            }
+        }else{
+            u.setDepartmentId(null);
+            u.setDepartmentTitle("");
+        }
+
+        u.setPassword(old.getPassword());
+        userService.update(u);
+        // 删除该用户角色
+        userRoleService.deleteByUserId(u.getId());
+        if(roles!=null){
+            // 新角色
+            List<UserRole> userRoles = Arrays.asList(roles).stream().map(e -> {
+                return new UserRole().setRoleId(e).setUserId(u.getId());
+            }).collect(Collectors.toList());
+            userRoleService.saveOrUpdateAll(userRoles);
+        }
+        // 手动删除缓存
+        redisTemplate.delete("userRole::"+u.getId());
+        redisTemplate.delete("userRole::depIds:"+u.getId());
+        redisTemplate.delete("userPermission::"+u.getId());
+        redisTemplate.delete("permission::userMenuList:"+u.getId());
+        return ResultUtil.success("修改成功");
     }
 
     @RequestMapping(value = "/admin/disable/{userId}",method = RequestMethod.POST)
@@ -339,7 +312,7 @@ public class UserController {
         }
         user.setStatus(CommonConstant.USER_STATUS_LOCK);
         userService.update(user);
-        //手动更新缓存
+        // 手动更新缓存
         redisTemplate.delete("user::"+user.getUsername());
         return ResultUtil.data(null);
     }
@@ -354,7 +327,7 @@ public class UserController {
         }
         user.setStatus(CommonConstant.USER_STATUS_NORMAL);
         userService.update(user);
-        //手动更新缓存
+        // 手动更新缓存
         redisTemplate.delete("user::"+user.getUsername());
         return ResultUtil.data(null);
     }
@@ -365,20 +338,43 @@ public class UserController {
 
         for(String id:ids){
             User u = userService.get(id);
-            //删除缓存
+            // 删除缓存
             redisTemplate.delete("user::" + u.getUsername());
             redisTemplate.delete("userRole::" + u.getId());
             redisTemplate.delete("userRole::depIds:" + u.getId());
             redisTemplate.delete("permission::userMenuList:" + u.getId());
             Set<String> keys = redisTemplateHelper.keys("department::*");
             redisTemplate.delete(keys);
+
             userService.delete(id);
-            //删除关联角色
+
+            // 删除关联角色
             userRoleService.deleteByUserId(id);
-            //删除关联部门负责人
+            // 删除关联部门负责人
             departmentHeaderService.deleteByUserId(id);
         }
         return ResultUtil.success("批量通过id删除数据成功");
     }
 
+    /**
+     * 校验
+     * @param username 用户名 不校验传空字符或null 下同
+     * @param mobile 手机号
+     * @param email 邮箱
+     */
+    public void checkUserInfo(String username, String mobile, String email){
+
+        // 禁用词
+        CommonUtil.stopwords(username);
+
+        if(StrUtil.isNotBlank(username)&&userService.findByUsername(username)!=null){
+            throw new XbootException("该登录账号已被注册");
+        }
+        if(StrUtil.isNotBlank(email)&&userService.findByEmail(email)!=null){
+            throw new XbootException("该邮箱已被注册");
+        }
+        if(StrUtil.isNotBlank(mobile)&&userService.findByMobile(mobile)!=null){
+            throw new XbootException("该手机号已被注册");
+        }
+    }
 }

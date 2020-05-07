@@ -1,5 +1,6 @@
 package cn.exrick.xboot.config.security;
 
+import cn.exrick.xboot.common.utils.NameUtil;
 import cn.exrick.xboot.modules.base.entity.User;
 import cn.exrick.xboot.common.exception.LoginFailLimitException;
 import cn.exrick.xboot.modules.base.service.UserService;
@@ -30,14 +31,21 @@ public class UserDetailsServiceImpl implements UserDetailsService{
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
 
-        String flagKey = "loginFailFlag:"+username;
+        String flagKey = "loginFailFlag:" + username;
         String value = redisTemplate.opsForValue().get(flagKey);
         Long timeRest = redisTemplate.getExpire(flagKey, TimeUnit.MINUTES);
         if(StrUtil.isNotBlank(value)){
-            //超过限制次数
+            // 超过限制次数
             throw new LoginFailLimitException("登录错误次数超过限制，请"+timeRest+"分钟后再试");
         }
-        User user = userService.findByUsername(username);
+        User user;
+        if(NameUtil.mobile(username)){
+            user = userService.findByMobile(username);
+        }else if(NameUtil.email(username)){
+            user = userService.findByEmail(username);
+        }else{
+            user = userService.findByUsername(username);
+        }
         return new SecurityUserDetails(user);
     }
 }
